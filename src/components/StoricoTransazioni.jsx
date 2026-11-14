@@ -8,7 +8,6 @@ export default function StoricoTransazioni() {
   const [filtrate, setFiltrate] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Stati per i filtri
   const [ricercaNome, setRicercaNome] = useState('');
   const [filtroPlesso, setFiltroPlesso] = useState('Tutti');
   const [filtroTipo, setFiltroTipo] = useState('Tutti');
@@ -18,7 +17,6 @@ export default function StoricoTransazioni() {
   const fetchStorico = async () => {
     setLoading(true);
     try {
-      // Usiamo la nuova collezione 'transazioni'
       const q = query(collection(db, "transazioni"), orderBy("data", "desc"), limit(1000));
       const snapshot = await getDocs(q);
       
@@ -27,7 +25,6 @@ export default function StoricoTransazioni() {
         return {
           id: doc.id,
           ...data,
-          // Normalizziamo la data dal nuovo campo "data"
           dataFormattata: data.data?.toDate 
             ? data.data.toDate().toLocaleString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute:'2-digit' })
             : data.date_str || 'Data non disponibile'
@@ -36,8 +33,6 @@ export default function StoricoTransazioni() {
       setTransazioni(lista);
       setFiltrate(lista);
     } catch (error) {
-      console.warn("Manca l'indice su 'data', uso ordinamento locale", error);
-      // Fallback in caso di mancanza dell'Indice Composto su Firebase
       try {
         const snapshot = await getDocs(collection(db, "transazioni"));
         let lista = snapshot.docs.map(doc => {
@@ -50,7 +45,6 @@ export default function StoricoTransazioni() {
               : data.date_str || 'Data non disponibile'
           };
         });
-        // Ordina localmente in modo discendente
         lista.sort((a, b) => {
           const timeA = a.data?.toMillis ? a.data.toMillis() : new Date(a.date_str || 0).getTime();
           const timeB = b.data?.toMillis ? b.data.toMillis() : new Date(b.date_str || 0).getTime();
@@ -59,8 +53,7 @@ export default function StoricoTransazioni() {
         setTransazioni(lista);
         setFiltrate(lista);
       } catch (fallbackError) {
-        console.error("Errore irreversibile caricamento storico:", fallbackError);
-        alert("Impossibile caricare lo storico delle transazioni.");
+        console.error("Errore irreversibile:", fallbackError);
       }
     } finally {
       setLoading(false);
@@ -71,30 +64,22 @@ export default function StoricoTransazioni() {
     fetchStorico();
   }, []);
 
-  // Effetto per applicare i filtri in tempo reale
   useEffect(() => {
     let risultato = transazioni;
-
     if (ricercaNome.trim()) {
       const termine = ricercaNome.toLowerCase();
-      // Usiamo holder_name (il nuovo campo) o facciamo fallback su holder (vecchio campo)
       risultato = risultato.filter(tx => (tx.holder_name || tx.holder || '').toLowerCase().includes(termine));
     }
-
     if (filtroPlesso !== 'Tutti') {
       risultato = risultato.filter(tx => tx.plesso === filtroPlesso);
     }
-
     if (filtroTipo !== 'Tutti') {
       const tipoRichiesto = filtroTipo === 'Ricariche' ? 'ricarica' : 'consumazione';
-      // Usiamo tipo (nuovo campo) o facciamo fallback su type (vecchio campo)
       risultato = risultato.filter(tx => (tx.tipo || tx.type) === tipoRichiesto);
     }
-
     setFiltrate(risultato);
   }, [ricercaNome, filtroPlesso, filtroTipo, transazioni]);
 
-  // Calcolo Statistiche Dinamiche sui dati filtrati (usando importo o total)
   const getImporto = (tx) => parseFloat(tx.importo || tx.total || 0);
 
   const totRicariche = filtrate
@@ -106,21 +91,44 @@ export default function StoricoTransazioni() {
     .reduce((acc, curr) => acc + getImporto(curr), 0);
 
   return (
-    <div className="panel" style={{ maxWidth: '1000px', margin: '0 auto' }}>
+    <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '15px' }}>
       
+      {/* BLOCCO STILI RESPONSIVE INTEGRATO */}
+      <style>{`
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px; }
+        .filters-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px; margin-bottom: 25px; background: #f9fafb; padding: 15px; border-radius: 12px; border: 1px solid #e5e7eb; }
+        
+        .desktop-table { width: 100%; border-collapse: collapse; }
+        .desktop-table th { padding: 15px; border-bottom: 2px solid #e2e8f0; background: #f8fafc; color: #475569; text-align: left; }
+        .desktop-table td { padding: 15px; border-bottom: 1px solid #f1f5f9; }
+        
+        .mobile-cards { display: none; }
+        
+        /* Regole per Smartphone e Tablet (sotto i 768px) */
+        @media (max-width: 768px) {
+          .desktop-table { display: none; }
+          .mobile-cards { display: flex; flex-direction: column; gap: 15px; }
+          .tx-card { background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
+          .tx-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; border-bottom: 1px solid #f1f5f9; padding-bottom: 10px; }
+          .tx-body { display: flex; flex-direction: column; gap: 8px; }
+          .tx-row { display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem; }
+          .tx-label { color: #64748b; font-weight: 500; }
+        }
+      `}</style>
+
       {/* Intestazione */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '30px', borderBottom: '1px solid #e5e7eb', paddingBottom: '15px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '25px', borderBottom: '1px solid #e5e7eb', paddingBottom: '15px' }}>
         <div style={{ background: '#fef3c7', padding: '12px', borderRadius: '12px', color: '#d97706' }}>
           <History size={28} />
         </div>
         <div>
-          <h2 style={{ margin: 0, color: '#1f2937' }}>Storico Transazioni</h2>
+          <h2 style={{ margin: 0, color: '#1f2937', fontSize: '1.5rem' }}>Storico Transazioni</h2>
           <p style={{ margin: 0, color: '#6b7280', fontSize: '0.9rem' }}>Monitora incassi e ricariche di tutti i plessi</p>
         </div>
       </div>
 
       {/* Card Riepilogative */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px', marginBottom: '30px' }}>
+      <div className="stats-grid">
         <div style={{ background: 'white', padding: '20px', borderRadius: '12px', border: '1px solid #e5e7eb', borderLeft: '4px solid #0284c7', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <p style={{ margin: '0 0 5px 0', fontSize: '0.9rem', color: '#6b7280' }}>Totale Ricariche</p>
@@ -147,16 +155,15 @@ export default function StoricoTransazioni() {
       </div>
 
       {/* Barra dei Filtri */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px', marginBottom: '25px', background: '#f9fafb', padding: '15px', borderRadius: '12px', border: '1px solid #e5e7eb' }}>
-        
+      <div className="filters-grid">
         <div style={{ position: 'relative' }}>
           <Search size={18} color="#9ca3af" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
           <input 
             type="text" 
-            placeholder="Cerca Utente/Docente..." 
+            placeholder="Cerca Utente..." 
             value={ricercaNome}
             onChange={(e) => setRicercaNome(e.target.value)}
-            style={{ width: '100%', paddingLeft: '38px', boxSizing: 'border-box', padding: '10px 10px 10px 38px', border: '1px solid #d1d5db', borderRadius: '8px', outline: 'none' }}
+            style={{ width: '100%', padding: '12px 10px 12px 38px', border: '1px solid #d1d5db', borderRadius: '8px', outline: 'none' }}
           />
         </div>
 
@@ -165,7 +172,7 @@ export default function StoricoTransazioni() {
           <select 
             value={filtroPlesso} 
             onChange={(e) => setFiltroPlesso(e.target.value)}
-            style={{ width: '100%', padding: '10px 10px 10px 38px', border: '1px solid #d1d5db', borderRadius: '8px', outline: 'none', background: 'white' }}
+            style={{ width: '100%', padding: '12px 10px 12px 38px', border: '1px solid #d1d5db', borderRadius: '8px', outline: 'none', background: 'white' }}
           >
             {plessi.map(p => <option key={p} value={p}>{p === 'Tutti' ? 'Tutti i Plessi' : p}</option>)}
           </select>
@@ -176,68 +183,114 @@ export default function StoricoTransazioni() {
           <select 
             value={filtroTipo} 
             onChange={(e) => setFiltroTipo(e.target.value)}
-            style={{ width: '100%', padding: '10px 10px 10px 38px', border: '1px solid #d1d5db', borderRadius: '8px', outline: 'none', background: 'white' }}
+            style={{ width: '100%', padding: '12px 10px 12px 38px', border: '1px solid #d1d5db', borderRadius: '8px', outline: 'none', background: 'white' }}
           >
             <option value="Tutti">Tutte le Operazioni</option>
             <option value="Ricariche">Solo Ricariche</option>
-            <option value="Consumazioni">Solo Consumazioni (Bar)</option>
+            <option value="Consumazioni">Solo Consumazioni</option>
           </select>
         </div>
       </div>
 
-      {/* Tabella Dati */}
       {loading ? (
         <p style={{ textAlign: 'center', color: '#6b7280', padding: '20px' }}>Caricamento storico in corso...</p>
       ) : (
-        <div style={{ overflowX: 'auto' }}>
-          <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <>
+          {/* VISUALIZZAZIONE DESKTOP (Tabella Classica) */}
+          <table className="desktop-table">
             <thead>
-              <tr style={{ backgroundColor: '#f8fafc', color: '#475569', textAlign: 'left' }}>
-                <th style={{ padding: '12px 15px', borderBottom: '1px solid #e2e8f0' }}>Data e Ora</th>
-                <th style={{ padding: '12px 15px', borderBottom: '1px solid #e2e8f0' }}>Plesso</th>
-                <th style={{ padding: '12px 15px', borderBottom: '1px solid #e2e8f0' }}>Utente</th>
-                <th style={{ padding: '12px 15px', borderBottom: '1px solid #e2e8f0' }}>Tipo</th>
-                <th style={{ padding: '12px 15px', borderBottom: '1px solid #e2e8f0' }}>Dettaglio</th>
-                <th style={{ padding: '12px 15px', borderBottom: '1px solid #e2e8f0', textAlign: 'right' }}>Importo</th>
+              <tr>
+                <th>Data e Ora</th>
+                <th>Plesso</th>
+                <th>Utente</th>
+                <th>Tipo</th>
+                <th>Dettaglio</th>
+                <th style={{ textAlign: 'right' }}>Importo</th>
               </tr>
             </thead>
             <tbody>
               {filtrate.map(tx => (
-                <tr key={tx.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                  <td style={{ padding: '12px 15px', fontSize: '0.9rem', color: '#4b5563' }}>{tx.dataFormattata}</td>
-                  <td style={{ padding: '12px 15px' }}>
+                <tr key={tx.id}>
+                  <td style={{ fontSize: '0.9rem', color: '#4b5563' }}>{tx.dataFormattata}</td>
+                  <td>
                     <span style={{ background: '#f3f4f6', padding: '4px 8px', borderRadius: '6px', fontSize: '0.85rem', color: '#374151' }}>
                       {tx.plesso || 'Non spec.'}
                     </span>
                   </td>
-                  <td style={{ padding: '12px 15px', fontWeight: '500' }}>{tx.holder_name || tx.holder || 'Utente Sconosciuto'}</td>
-                  <td style={{ padding: '12px 15px' }}>
+                  <td style={{ fontWeight: '500' }}>{tx.holder_name || tx.holder || 'Sconosciuto'}</td>
+                  <td>
                     {(tx.tipo || tx.type) === 'ricarica' ? (
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#0284c7', fontSize: '0.9rem', fontWeight: '500' }}><CreditCard size={14} /> Ricarica</span>
                     ) : (
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#059669', fontSize: '0.9rem', fontWeight: '500' }}><Coffee size={14} /> Bar</span>
                     )}
                   </td>
-                  <td style={{ padding: '12px 15px', fontSize: '0.85rem', color: '#6b7280' }}>
-                    {(tx.tipo || tx.type) === 'ricarica' 
-                      ? (tx.operatore ? `Operatore: ${tx.operatore}` : 'N/D') 
-                      : (tx.items ? tx.items.map(i => `${i.qty}x ${i.name}`).join(', ') : 'N/D')}
+                  <td style={{ fontSize: '0.85rem', color: '#6b7280' }}>
+                    {(tx.tipo || tx.type) === 'ricarica' ? (tx.operatore ? `Op: ${tx.operatore}` : 'N/D') : (tx.items ? tx.items.map(i => `${i.qty}x ${i.name}`).join(', ') : 'N/D')}
                   </td>
-                  <td style={{ padding: '12px 15px', textAlign: 'right', fontWeight: '700', color: (tx.tipo || tx.type) === 'ricarica' ? '#0284c7' : '#059669' }}>
+                  <td style={{ textAlign: 'right', fontWeight: '700', color: (tx.tipo || tx.type) === 'ricarica' ? '#0284c7' : '#059669' }}>
                     € {getImporto(tx).toFixed(2)}
                   </td>
                 </tr>
               ))}
-              {filtrate.length === 0 && (
-                <tr>
-                  <td colSpan="6" style={{ textAlign: 'center', padding: '30px', color: '#6b7280' }}>
-                    Nessuna transazione trovata con i filtri attuali.
-                  </td>
-                </tr>
-              )}
             </tbody>
           </table>
-        </div>
+
+          {/* VISUALIZZAZIONE SMARTPHONE (Card Verticali) */}
+          <div className="mobile-cards">
+            {filtrate.map(tx => (
+              <div key={tx.id} className="tx-card">
+                
+                <div className="tx-header">
+                  <div style={{ fontWeight: '600', fontSize: '1.05rem', color: '#1e293b' }}>
+                    {tx.holder_name || tx.holder || 'Sconosciuto'}
+                  </div>
+                  <div style={{ fontWeight: '700', fontSize: '1.1rem', color: (tx.tipo || tx.type) === 'ricarica' ? '#0284c7' : '#059669' }}>
+                    € {getImporto(tx).toFixed(2)}
+                  </div>
+                </div>
+                
+                <div className="tx-body">
+                  <div className="tx-row">
+                    <span className="tx-label">Operazione</span>
+                    <span>
+                      {(tx.tipo || tx.type) === 'ricarica' ? (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#0284c7', fontWeight: '600' }}><CreditCard size={14} /> Ricarica</span>
+                      ) : (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#059669', fontWeight: '600' }}><Coffee size={14} /> Bar</span>
+                      )}
+                    </span>
+                  </div>
+
+                  <div className="tx-row">
+                    <span className="tx-label">Data</span>
+                    <span style={{ color: '#475569' }}>{tx.dataFormattata}</span>
+                  </div>
+                  
+                  <div className="tx-row">
+                    <span className="tx-label">Plesso</span>
+                    <span style={{ background: '#f1f5f9', padding: '2px 8px', borderRadius: '4px', fontSize: '0.85rem' }}>{tx.plesso || 'Non spec.'}</span>
+                  </div>
+
+                  <div className="tx-row" style={{ alignItems: 'flex-start' }}>
+                    <span className="tx-label">Dettaglio</span>
+                    <span style={{ textAlign: 'right', fontSize: '0.85rem', color: '#64748b', maxWidth: '60%' }}>
+                      {(tx.tipo || tx.type) === 'ricarica' ? (tx.operatore ? `Op: ${tx.operatore}` : 'N/D') : (tx.items ? tx.items.map(i => `${i.qty}x ${i.name}`).join(', ') : 'N/D')}
+                    </span>
+                  </div>
+                </div>
+
+              </div>
+            ))}
+          </div>
+
+          {/* Messaggio Vuoto */}
+          {filtrate.length === 0 && (
+            <div style={{ textAlign: 'center', padding: '30px', color: '#6b7280', background: 'white', borderRadius: '12px', border: '1px solid #e5e7eb' }}>
+              Nessuna transazione trovata con i filtri attuali.
+            </div>
+          )}
+        </>
       )}
     </div>
   );

@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { collection, query, orderBy, startAt, endAt, getDocs, doc, runTransaction } from 'firebase/firestore';
-import { db } from '../firebase';
+import { collection, getDocs, doc, runTransaction } from 'firebase/firestore';
+import { db, auth } from '../firebase';
 import { Search, CreditCard, User, Wallet, Calendar, FileText, CheckCircle, ArrowRight } from 'lucide-react';
 
 export default function GestioneRicariche() {
@@ -65,7 +65,7 @@ export default function GestioneRicariche() {
     setLoading(true);
     const userRef = doc(db, "cards", utenteSelezionato.id);
     
-    // CORRETTO: Salvataggio diretto nella nuova collezione 'transazioni'
+    // Riferimento esplicito alla NUOVA collezione 'transazioni'
     const txRef = doc(collection(db, "transazioni")); 
 
     try {
@@ -77,12 +77,12 @@ export default function GestioneRicariche() {
         
         transaction.update(userRef, { credit: nuovoSaldo });
         
-        // CORRETTO: Allineato alla nuova struttura dati (tipo, importo, plesso)
+        // Salvataggio pulito con i campi standardizzati
         transaction.set(txRef, {
           holder_name: utenteSelezionato.holder_name || utenteSelezionato.holder || "Utente",
           tipo: "ricarica",
           importo: val,
-          plesso: utenteSelezionato.plesso || "Trecastagni", // Associa al plesso dell'utente o default
+          plesso: utenteSelezionato.plesso || "Trecastagni",
           data: new Date(),
           date_str: new Date().toLocaleString('it-IT'),
           operatore: auth.currentUser?.email || "Segreteria",

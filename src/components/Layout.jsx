@@ -26,7 +26,7 @@ export default function Layout({ children }) {
     }
   };
 
-  // Funzione per chiudere il menu mobile quando si clicca un link
+  // Chiude il menu quando si clicca un link su smartphone
   const closeMobileMenu = () => setIsMobileMenuOpen(false);
 
   // Componente interno per i bottoni del menu
@@ -53,68 +53,90 @@ export default function Layout({ children }) {
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#f3f4f6', display: 'flex', flexDirection: 'column' }}>
       
-      {/* 
-        INIEZIONE STILI RESPONSIVE 
-        Queste regole CSS scattano automaticamente quando lo schermo scende sotto gli 850px (tablet/smartphone).
-      */}
+      {/* INIEZIONE STILI CSS PER IL MENU */}
       <style>{`
-        /* Stile Hover generico per i NavItem */
         .nav-item:hover { color: #374151 !important; }
         
-        /* Contenitore Profilo + Bottone Esci (Destra) */
-        .header-actions { display: flex; align-items: center; gap: 20px; }
-        
-        /* Nascondiamo l'hamburger di base sui monitor grandi */
         .mobile-toggle-btn { display: none; background: transparent; border: none; color: #0284c7; cursor: pointer; padding: 5px; }
 
+        /* LAYOUT DESKTOP */
+        .menu-wrapper {
+          display: flex;
+          flex: 1;
+          align-items: center;
+          justify-content: space-between;
+          margin-left: 20px;
+        }
+        
+        /* Se siamo in dashboard, spinge i pulsanti profilo a destra */
+        .menu-wrapper.dashboard-mode {
+          justify-content: flex-end;
+        }
+
+        .center-nav { display: flex; gap: 5px; margin: 0 auto; }
+        .header-actions { display: flex; align-items: center; gap: 20px; }
+
+        /* LAYOUT SMARTPHONE (Sotto gli 850px) */
         @media (max-width: 850px) {
-          /* Riduciamo l'altezza della topbar e sistemiamo il logo */
           .topbar { padding: 0 15px !important; height: 65px !important; }
           .logo-img { height: 35px !important; }
           .logo-title h1 { font-size: 1.1rem !important; }
           .logo-title p { font-size: 0.6rem !important; }
 
-          /* Mostriamo l'hamburger */
+          /* Mostriamo il bottone Hamburger */
           .mobile-toggle-btn { display: block; margin-left: auto; }
 
-          /* Nascondiamo di base il menu centrale e le azioni di destra (profilo e logout) */
-          .center-nav, .header-actions { display: none !important; }
-
-          /* SE L'HAMBURGER È APERTO: Mostriamo tutto in verticale sovrapposto allo schermo */
-          .mobile-menu-active .center-nav {
-            display: flex !important;
+          /* Trasformiamo il wrapper in un contenitore a tutto schermo a comparsa */
+          .menu-wrapper {
+            display: none;
             flex-direction: column;
-            position: absolute;
+            position: fixed; /* Fixed blocca il menu sullo schermo senza farlo scorrere */
             top: 65px;
             left: 0;
             width: 100%;
+            height: calc(100vh - 65px);
             background: white;
-            padding: 15px;
-            box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
-            border-bottom: 1px solid #e5e7eb;
-            box-sizing: border-box;
             z-index: 45;
+            padding: 20px 20px 40px 20px;
+            box-sizing: border-box;
           }
           
-          /* Spingiamo il logout dentro la tendina mobile e allarghiamo i pulsanti */
-          .mobile-menu-active .nav-item { width: 100%; padding: 12px 15px !important; }
-          .mobile-menu-active .header-actions { 
-            display: flex !important; 
-            flex-direction: column; 
-            width: 100%; 
-            padding: 15px; 
-            position: absolute; 
-            top: auto; 
-            margin-top: 150px; 
-            background: white; 
-            box-sizing: border-box; 
-            z-index: 46; 
+          /* Quando l'hamburger viene cliccato */
+          .menu-wrapper.open { display: flex; }
+
+          /* Incolonniamo i tasti di navigazione in alto */
+          .center-nav {
+            flex-direction: column;
+            width: 100%;
+            margin: 0;
+          }
+          .center-nav .nav-item {
+            width: 100%;
+            padding: 15px !important;
+            font-size: 1.1rem !important;
+            background: #f8fafc !important;
+            border-radius: 10px;
+            margin-bottom: 8px;
+          }
+          .center-nav .nav-item:active { background: #e0f2fe !important; }
+
+          /* Incolonniamo le azioni utente in basso (Comportamento Footer) */
+          .header-actions {
+            flex-direction: column;
+            width: 100%;
+            margin-top: auto; /* Questo comando spinge magicamente il blocco verso il fondo! */
+            padding-top: 20px;
+            border-top: 1px solid #e5e7eb;
+            gap: 15px;
+          }
+          .header-actions > div, .header-actions > button {
+            width: 100%;
           }
         }
       `}</style>
 
-      {/* Topbar (L'aggiunta di className="mobile-menu-active" attiva la tendina su smartphone) */}
-      <header className={`topbar ${isMobileMenuOpen ? 'mobile-menu-active' : ''}`} style={{ background: 'white', borderBottom: '1px solid #e5e7eb', padding: '0 25px', height: '75px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 50 }}>
+      {/* Topbar */}
+      <header className="topbar" style={{ background: 'white', borderBottom: '1px solid #e5e7eb', padding: '0 25px', height: '75px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 50 }}>
         
         {/* Logo e Titolo (Sinistra) */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer' }} onClick={() => { navigate('/'); closeMobileMenu(); }}>
@@ -125,7 +147,7 @@ export default function Layout({ children }) {
           </div>
         </div>
 
-        {/* Pulsante Hamburger (Visibile solo sotto 850px) */}
+        {/* Pulsante Hamburger (Mobile) */}
         <button 
           className="mobile-toggle-btn"
           onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
@@ -133,40 +155,47 @@ export default function Layout({ children }) {
           {isMobileMenuOpen ? <X size={28} /> : <Menu size={28} />}
         </button>
 
-        {/* Menu Navigazione Centrale (Nascosto su Dashboard, e trasformato in tendina su smartphone se aperto) */}
-        {!isDashboard && (
-          <nav className="center-nav" style={{ display: 'flex', gap: '5px' }}>
-            <NavItem to="/" icon={Home} label="Dashboard" />
-            <NavItem to="/ricariche" icon={CreditCard} label="Ricariche" />
-            <NavItem to="/storico" icon={History} label="Storico" />
-            <NavItem to="/prodotti" icon={Coffee} label="Prodotti" />
-            <NavItem to="/report" icon={BarChart2} label="Report" />
-          </nav>
-        )}
-
-        {/* Utente e Tasto Logout (Destra. Su Smartphone finiscono in fondo al menu a tendina) */}
-        <div className="header-actions">
+        {/* 
+          WRAPPER DINAMICO:
+          Su Desktop: Dispone Navigazione al centro e Profilo a destra.
+          Su Smartphone: Diventa una tendina verticale con Nav in alto e Profilo in basso.
+        */}
+        <div className={`menu-wrapper ${isMobileMenuOpen ? 'open' : ''} ${isDashboard ? 'dashboard-mode' : ''}`}>
           
-          {/* Badge Utente Loggato */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#f8fafc', padding: '6px 14px', borderRadius: '30px', border: '1px solid #e2e8f0', width: '100%', boxSizing: 'border-box' }}>
-            <div style={{ background: '#e0f2fe', padding: '6px', borderRadius: '50%', color: '#0284c7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <User size={16} />
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <span style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: '600', textTransform: 'uppercase' }}>Sessione Attiva</span>
-              <span style={{ fontSize: '0.85rem', color: '#334155', fontWeight: '600', wordBreak: 'break-all' }}>{utenteLoggato}</span>
-            </div>
-          </div>
+          {/* Menu Navigazione Centrale */}
+          {!isDashboard && (
+            <nav className="center-nav">
+              <NavItem to="/" icon={Home} label="Dashboard" />
+              <NavItem to="/ricariche" icon={CreditCard} label="Ricariche" />
+              <NavItem to="/storico" icon={History} label="Storico" />
+              <NavItem to="/prodotti" icon={Coffee} label="Prodotti" />
+              <NavItem to="/report" icon={BarChart2} label="Report" />
+            </nav>
+          )}
 
-          <button 
-            onClick={handleLogout}
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', background: '#fef2f2', color: '#ef4444', border: '1px solid #fecaca', padding: '10px 18px', borderRadius: '10px', cursor: 'pointer', fontWeight: '600', transition: 'all 0.2s', width: '100%' }}
-            onMouseOver={(e) => e.currentTarget.style.background = '#fee2e2'}
-            onMouseOut={(e) => e.currentTarget.style.background = '#fef2f2'}
-          >
-            <LogOut size={18} /> Esci
-          </button>
+          {/* Badge Utente e Tasto Logout (Footer su Mobile) */}
+          <div className="header-actions">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#f8fafc', padding: '6px 14px', borderRadius: '30px', border: '1px solid #e2e8f0', boxSizing: 'border-box' }}>
+              <div style={{ background: '#e0f2fe', padding: '6px', borderRadius: '50%', color: '#0284c7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <User size={16} />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <span style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: '600', textTransform: 'uppercase' }}>Sessione Attiva</span>
+                <span style={{ fontSize: '0.85rem', color: '#334155', fontWeight: '600', wordBreak: 'break-all' }}>{utenteLoggato}</span>
+              </div>
+            </div>
+
+            <button 
+              onClick={handleLogout}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', background: '#fef2f2', color: '#ef4444', border: '1px solid #fecaca', padding: '10px 18px', borderRadius: '10px', cursor: 'pointer', fontWeight: '600', transition: 'all 0.2s' }}
+              onMouseOver={(e) => e.currentTarget.style.background = '#fee2e2'}
+              onMouseOut={(e) => e.currentTarget.style.background = '#fef2f2'}
+            >
+              <LogOut size={18} /> Esci
+            </button>
+          </div>
         </div>
+
       </header>
 
       {/* Contenuto Principale delle Pagine */}

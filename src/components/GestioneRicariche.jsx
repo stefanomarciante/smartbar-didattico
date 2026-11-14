@@ -64,8 +64,6 @@ export default function GestioneRicariche() {
 
     setLoading(true);
     const userRef = doc(db, "cards", utenteSelezionato.id);
-    
-    // Riferimento esplicito alla NUOVA collezione 'transazioni'
     const txRef = doc(collection(db, "transazioni")); 
 
     try {
@@ -77,12 +75,12 @@ export default function GestioneRicariche() {
         
         transaction.update(userRef, { credit: nuovoSaldo });
         
-        // Salvataggio pulito con i campi standardizzati
+        // Salvataggio con plesso impostato a "Segreteria"
         transaction.set(txRef, {
           holder_name: utenteSelezionato.holder_name || utenteSelezionato.holder || "Utente",
           tipo: "ricarica",
           importo: val,
-          plesso: utenteSelezionato.plesso || "Trecastagni",
+          plesso: "Segreteria", // <-- Modificato qui
           data: new Date(),
           date_str: new Date().toLocaleString('it-IT'),
           operatore: auth.currentUser?.email || "Segreteria",

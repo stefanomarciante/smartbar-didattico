@@ -20,14 +20,11 @@ export default function GestioneRicariche() {
 
     setLoading(true);
     try {
-      // Scarica tutte le card (operazione istantanea per i numeri di una scuola)
       const snapshot = await getDocs(collection(db, "cards"));
       const tutteLeCards = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-      // Filtra localmente: ignora maiuscole/minuscole e permette la ricerca di parole parziali
       const termine = ricerca.toLowerCase();
       const res = tutteLeCards.filter(card => {
-        // Intercetta il nome in base a come lo hai chiamato nel database (holder_name, holder o nome)
         const nomeUtente = (card.holder_name || card.holder || card.nome || "").toLowerCase();
         return nomeUtente.includes(termine);
       });
@@ -67,7 +64,9 @@ export default function GestioneRicariche() {
 
     setLoading(true);
     const userRef = doc(db, "cards", utenteSelezionato.id);
-    const txRef = doc(collection(db, "sales")); 
+    
+    // CORRETTO: Salvataggio diretto nella nuova collezione 'transazioni'
+    const txRef = doc(collection(db, "transazioni")); 
 
     try {
       await runTransaction(db, async (transaction) => {
@@ -78,15 +77,19 @@ export default function GestioneRicariche() {
         
         transaction.update(userRef, { credit: nuovoSaldo });
         
-        // Scrittura allineata ai POS nella collezione "sales"
+        // CORRETTO: Allineato alla nuova struttura dati (tipo, importo, plesso)
         transaction.set(txRef, {
-          holder: utenteSelezionato.holder_name,
-          type: "ricarica",
-          total: val,
-          timestamp: new Date(),
+          holder_name: utenteSelezionato.holder_name || utenteSelezionato.holder || "Utente",
+          tipo: "ricarica",
+          importo: val,
+          plesso: utenteSelezionato.plesso || "Trecastagni", // Associa al plesso dell'utente o default
+          data: new Date(),
           date_str: new Date().toLocaleString('it-IT'),
+          operatore: auth.currentUser?.email || "Segreteria",
+          dettagli_versamento: datiEmissione,
+          data_versamento: dataVersamento,
           items: [{
-            name: "Ricarica manuale segreteria",
+            name: `Ricarica manuale (${datiEmissione})`,
             price: val,
             qty: 1,
             subtotal: val
@@ -178,7 +181,6 @@ export default function GestioneRicariche() {
             marginBottom: '30px', boxShadow: '0 10px 25px -5px rgba(2, 132, 199, 0.4)',
             position: 'relative', overflow: 'hidden'
           }}>
-            {/* Effetto decorativo interno alla card */}
             <div style={{ position: 'absolute', top: '-20px', right: '-20px', opacity: 0.1 }}>
               <Wallet size={150} />
             </div>

@@ -280,3 +280,89 @@ input:focus {
   color: var(--text-muted);
   line-height: 1.4;
 }
+
+/* --- INIZIO: REGOLE RESPONSIVE PER HEADER E MENU HAMBURGER --- */
+
+/* Nascondiamo di base il pulsante Hamburger sui computer */
+.mobile-menu-btn {
+  display: none;
+  background: transparent;
+  border: none;
+  color: var(--primary);
+  cursor: pointer;
+  padding: 5px;
+}
+
+/* Raggruppiamo i pulsanti di navigazione e il logout in orizzontale su Desktop */
+.nav-container {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+/* Quando lo schermo scende sotto i 900px (Tablet/Smartphone) scatta la magia */
+@media (max-width: 900px) {
+  
+  /* L'header orizzontale rimane compatto */
+  .global-header {
+    padding: 10px 15px;
+  }
+  
+  /* Facciamo rimpicciolire leggermente logo e testo per farci stare l'hamburger */
+  .header-logo {
+    height: 40px;
+  }
+  .app-title {
+    font-size: 1.1rem;
+  }
+  .school-name {
+    font-size: 0.6rem;
+  }
+
+  /* Mostriamo il pulsante Hamburger a destra */
+  .mobile-menu-btn {
+    display: block;
+    margin-left: auto;
+  }
+
+  /* Nascondiamo completamente il menu orizzontale "bucando" lo schermo */
+  .nav-container {
+    display: none;
+    flex-direction: column;
+    position: absolute;
+    top: 100%;       /* Si aggancia subito sotto l'header */
+    left: 0;
+    width: 100%;
+    background-color: var(--card-bg);
+    border-bottom: 1px solid var(--border-color);
+    box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
+    padding: 20px;
+    box-sizing: border-box;
+    z-index: 40;
+  }
+
+  /* Quando l'utente tocca l'Hamburger (isMobileMenuOpen = true), aggiungiamo la classe "open" e mostriamo il menu a tendina */
+  .nav-container.open {
+    display: flex;
+  }
+
+  /* Incolonniamo i pulsanti internamente per riempire lo schermo in verticale */
+  .header-nav {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .nav-btn {
+    width: 100%;
+    justify-content: flex-start;
+    padding: 12px 15px;
+    font-size: 1.05rem;
+  }
+
+  .btn-logout {
+    width: 100%;
+    justify-content: center;
+    margin-top: 15px;
+  }
+}
+/* --- FINE: REGOLE RESPONSIVE --- */

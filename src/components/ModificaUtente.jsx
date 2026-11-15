@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
-import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
+import { useState, useEffect, useRef } from 'react';
+import { collection, getDocs, doc, updateDoc, setDoc, onSnapshot, runTransaction, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Search, UserCog, User, ArrowLeft, GraduationCap, Edit2, Hash, CheckCircle } from 'lucide-react';
+import { Search, UserCog, User, ArrowLeft, GraduationCap, Edit2, Hash, CheckCircle, Wifi, RefreshCw, AlertTriangle } from 'lucide-react';
 
 export default function ModificaUtente() {
   const [tuttiUtenti, setTuttiUtenti] = useState([]);
@@ -13,6 +13,24 @@ export default function ModificaUtente() {
   // Campi form modifica
   const [editNome, setEditNome] = useState("");
   const [editRuolo, setEditRuolo] = useState("");
+  const [nuovoUid, setNuovoUid] = useState("");
+  const [avvisoUid, setAvvisoUid] = useState("");
+
+  // Stati Lettore NFC
+  const [lettoreConnesso, setLettoreConnesso] = useState(false);
+  const [ultimoUidLettore, setUltimoUidLettore] = useState("");
+  const primoCaricamento = useRef(true);
+  const utenteSelezionatoRef = useRef(null);
+  const tuttiUtentiRef = useRef([]);
+
+  // Mantiene i ref sincronizzati per usarli dentro onSnapshot
+  useEffect(() => {
+    utenteSelezionatoRef.current = utenteSelezionato;
+  }, [utenteSelezionato]);
+
+  useEffect(() => {
+    tuttiUtentiRef.current = tuttiUtenti;
+  }, [tuttiUtenti]);
 
   const fetchUtenti = async () => {
     setLoading(true);
@@ -35,36 +53,150 @@ export default function ModificaUtente() {
     fetchUtenti();
   }, []);
 
+  // Ascolto in tempo reale di nfc_reader/ultimo_scan
+  useEffect(() => {
+    const readerRef = doc(db, "nfc_reader", "ultimo_scan");
+    const unsubscribe = onSnapshot(readerRef, (docSnap) => {
+      if (docSnap.exists()) {
+        setLettoreConnesso(true);
+        const data = docSnap.data();
+        const uidLetto = (data.uid || '').trim().toUpperCase();
+        setUltimoUidLettore(uidLetto);
+
+        // Ignora il dato vecchio già presente all'apertura della pagina
+        if (primoCaricamento.current) {
+          primoCaricamento.current = false;
+          return;
+        }
+
+        if (!uidLetto) return;
+
+        // CASO 1: Siamo nella lista utenti -> Cerca e apre automaticamente l'utente della chiavetta
+        if (!utenteSelezionatoRef.current) {
+          const trovato = tuttiUtentiRef.current.find(u => u.id.toUpperCase() === uidLetto);
+          if (trovato) {
+            selezionaUtente(trovato);
+          } else {
+            setRicerca(uidLetto);
+          }
+        } else {
+          // CASO 2: Siamo dentro la modifica di un utente -> Imposta il nuovo UID per sostituire la card
+          impostaNuovaChiavetta(uidLetto);
+        }
+      } else {
+        primoCaricamento.current = false;
+      }
+    }, (error) => {
+      console.error("Errore ascolto lettore NFC:", error);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
   const selezionaUtente = (utente) => {
     setUtenteSelezionato(utente);
     setEditNome(utente.holder_name || "");
     setEditRuolo(utente.role || "Studente");
+    setNuovoUid(utente.id);
+    setAvvisoUid("");
+  };
+
+  // Verifica se il nuovo UID è già assegnato a un'altra persona
+  const impostaNuovaChiavetta = (codiceUid) => {
+    const uidPulito = codiceUid.trim().toUpperCase();
+    setNuovoUid(uidPulito);
+    setAvvisoUid("");
+
+    if (!uidPulito || !utenteSelezionatoRef.current) return;
+
+    if (uidPulito !== utenteSelezionatoRef.current.id.toUpperCase()) {
+      const conflitto = tuttiUtentiRef.current.find(u => u.id.toUpperCase() === uidPulito);
+      if (conflitto) {
+        setAvvisoUid(`Impossibile usare questa chiavetta: è già assegnata a ${conflitto.holder_name}!`);
+      }
+    }
   };
 
   const salvaModifiche = async (e) => {
     e.preventDefault();
     const nomePulito = editNome.trim().toUpperCase();
+    const uidFinale = nuovoUid.trim().toUpperCase();
+    const vecchioUid = utenteSelezionato.id;
 
-    if (!nomePulito) {
-      alert("Il nome utente non può essere vuoto.");
+    if (!nomePulito || !uidFinale) {
+      alert("Nome utente e UID non possono essere vuoti.");
+      return;
+    }
+
+    if (avvisoUid) {
+      alert(avvisoUid);
       return;
     }
 
     setLoading(true);
+    const readerRef = doc(db, "nfc_reader", "ultimo_scan");
+
     try {
-      const userRef = doc(db, "cards", utenteSelezionato.id);
-      await updateDoc(userRef, {
-        holder_name: nomePulito,
-        role: editRuolo
-      });
-      
-      alert("Dati utente aggiornati con successo!");
+      // Se l'UID non è cambiato, aggiorna solo Nome e Ruolo
+      if (uidFinale === vecchioUid.toUpperCase()) {
+        const userRef = doc(db, "cards", vecchioUid);
+        await updateDoc(userRef, {
+          holder_name: nomePulito,
+          role: editRuolo
+        });
+        alert("Dati utente aggiornati con successo!");
+      } else {
+        // Se l'UID è cambiato (Sostituzione Chiavetta): sposta credito e dati sul nuovo UID ed elimina il vecchio
+        const conferma = window.confirm(
+          `Confermi la sostituzione della chiavetta per ${nomePulito}?\n\nVecchio UID: ${vecchioUid}\nNuovo UID: ${uidFinale}\n\nIl credito attuale (€ ${(utenteSelezionato.credit || 0).toFixed(2)}) verrà trasferito sulla nuova chiavetta.`
+        );
+        if (!conferma) {
+          setLoading(false);
+          return;
+        }
+
+        const oldRef = doc(db, "cards", vecchioUid);
+        const newRef = doc(db, "cards", uidFinale);
+
+        await runTransaction(db, async (transaction) => {
+          const oldSnap = await transaction.get(oldRef);
+          const newSnap = await transaction.get(newRef);
+
+          if (!oldSnap.exists()) {
+            throw new Error("Documento utente originale non trovato.");
+          }
+          if (newSnap.exists()) {
+            throw new Error(`La nuova chiavetta è già associata a ${newSnap.data().holder_name}.`);
+          }
+
+          const vecchiDati = oldSnap.data();
+
+          // Crea il nuovo documento mantenendo saldo e storico creazione
+          transaction.set(newRef, {
+            ...vecchiDati,
+            holder_name: nomePulito,
+            role: editRuolo,
+            previous_uid: vecchioUid,
+            updatedAt: serverTimestamp()
+          });
+
+          // Elimina la vecchia chiavetta smarrita
+          transaction.delete(oldRef);
+        });
+
+        alert(`Chiavetta sostituita con successo! Nuovo UID assegnato: ${uidFinale}`);
+      }
+
+      // Svuota sempre il buffer del lettore NFC dopo il salvataggio
+      await setDoc(readerRef, { uid: "", scan_id: "" });
+
       setUtenteSelezionato(null);
       setRicerca("");
-      fetchUtenti(); // Ricarica la lista per mostrare il nome aggiornato
+      setUltimoUidLettore("");
+      fetchUtenti();
     } catch (error) {
       console.error("Errore modifica:", error);
-      alert("Errore durante il salvataggio delle modifiche.");
+      alert("Errore durante il salvataggio: " + error.message);
     } finally {
       setLoading(false);
     }
@@ -78,19 +210,35 @@ export default function ModificaUtente() {
     return nome.includes(termine) || uid.includes(termine);
   });
 
+  const uidModificato = utenteSelezionato && nuovoUid.trim().toUpperCase() !== utenteSelezionato.id.toUpperCase();
+
   return (
     <div className="panel" style={{ maxWidth: '900px', margin: '0 auto' }}>
       
       {/* VISTA 1: ELENCO UTENTI E RICERCA */}
       {!utenteSelezionato ? (
         <>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '30px', borderBottom: '1px solid #e5e7eb', paddingBottom: '15px' }}>
-            <div style={{ background: '#e0e7ff', padding: '12px', borderRadius: '12px', color: '#4f46e5' }}>
-              <UserCog size={28} />
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px', marginBottom: '30px', borderBottom: '1px solid #e5e7eb', paddingBottom: '15px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+              <div style={{ background: '#e0e7ff', padding: '12px', borderRadius: '12px', color: '#4f46e5' }}>
+                <UserCog size={28} />
+              </div>
+              <div>
+                <h2 style={{ margin: 0, color: '#1f2937' }}>Gestione Anagrafica Utenti</h2>
+                <p style={{ margin: 0, color: '#6b7280', fontSize: '0.9rem' }}>Cerca un utente, oppure avvicina la sua chiavetta al lettore per aprirne la scheda</p>
+              </div>
             </div>
-            <div>
-              <h2 style={{ margin: 0, color: '#1f2937' }}>Gestione Anagrafica Utenti</h2>
-              <p style={{ margin: 0, color: '#6b7280', fontSize: '0.9rem' }}>Cerca un utente o selezionalo dalla lista per aggiornarne i dati</p>
+
+            {/* Badge Stato Lettore Pico 2W */}
+            <div style={{ 
+              display: 'flex', alignItems: 'center', gap: '6px', 
+              background: lettoreConnesso ? '#eef2ff' : '#f3f4f6', 
+              color: lettoreConnesso ? '#4f46e5' : '#6b7280', 
+              padding: '6px 14px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: '600',
+              border: `1px solid ${lettoreConnesso ? '#c7d2fe' : '#e5e7eb'}`
+            }}>
+              <Wifi size={14} />
+              {lettoreConnesso ? `Lettore NFC Pronto` : 'In ascolto lettore NFC...'}
             </div>
           </div>
 
@@ -99,7 +247,7 @@ export default function ModificaUtente() {
             <Search size={20} color="#9ca3af" style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)' }} />
             <input 
               type="text" 
-              placeholder="Cerca rapidamente per Nome, Cognome o Seriale UID..." 
+              placeholder="Cerca per Nome, Cognome, Seriale UID o avvicina la chiavetta..." 
               value={ricerca} 
               onChange={(e) => setRicerca(e.target.value)}
               style={{ width: '100%', padding: '12px 12px 12px 45px', boxSizing: 'border-box', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '1rem', outline: 'none' }}
@@ -162,17 +310,30 @@ export default function ModificaUtente() {
         </>
       ) : (
 
-        /* VISTA 2: MODIFICA UTENTE SELEZIONATO */
+        /* VISTA 2: MODIFICA UTENTE SELEZIONATO & SOSTITUZIONE CARD */
         <div style={{ animation: 'fadeIn 0.3s ease-out' }}>
           
-          <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '30px', borderBottom: '1px solid #e5e7eb', paddingBottom: '15px' }}>
-            <button onClick={() => setUtenteSelezionato(null)} style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'transparent', border: 'none', color: '#6b7280', cursor: 'pointer', fontWeight: '600', padding: '8px', borderRadius: '8px' }}>
-              <ArrowLeft size={20} /> Torna alla lista
-            </button>
-            <div style={{ width: '2px', height: '30px', background: '#e5e7eb' }}></div>
-            <div>
-              <h2 style={{ margin: 0, color: '#4f46e5' }}>Modifica Profilo</h2>
-              <p style={{ margin: 0, color: '#6b7280', fontSize: '0.9rem' }}>{utenteSelezionato.holder_name}</p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px', marginBottom: '30px', borderBottom: '1px solid #e5e7eb', paddingBottom: '15px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+              <button onClick={() => setUtenteSelezionato(null)} style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'transparent', border: 'none', color: '#6b7280', cursor: 'pointer', fontWeight: '600', padding: '8px', borderRadius: '8px' }}>
+                <ArrowLeft size={20} /> Torna alla lista
+              </button>
+              <div style={{ width: '2px', height: '30px', background: '#e5e7eb' }}></div>
+              <div>
+                <h2 style={{ margin: 0, color: '#4f46e5' }}>Modifica Profilo</h2>
+                <p style={{ margin: 0, color: '#6b7280', fontSize: '0.9rem' }}>{utenteSelezionato.holder_name} — Credito: € {(utenteSelezionato.credit || 0).toFixed(2)}</p>
+              </div>
+            </div>
+
+            <div style={{ 
+              display: 'flex', alignItems: 'center', gap: '6px', 
+              background: lettoreConnesso ? '#eef2ff' : '#f3f4f6', 
+              color: lettoreConnesso ? '#4f46e5' : '#6b7280', 
+              padding: '6px 14px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: '600',
+              border: `1px solid ${lettoreConnesso ? '#c7d2fe' : '#e5e7eb'}`
+            }}>
+              <Wifi size={14} />
+              {lettoreConnesso ? `Avvicina nuova card per sostituirla` : 'Lettore NFC in ascolto...'}
             </div>
           </div>
           
@@ -188,23 +349,71 @@ export default function ModificaUtente() {
                 <p style={{ margin: '0 0 4px 0', fontSize: '0.85rem', opacity: 0.8 }}>Ruolo</p>
                 <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '600' }}>{editRuolo}</h3>
               </div>
+              <div style={{ textAlign: 'right' }}>
+                <p style={{ margin: '0 0 4px 0', fontSize: '0.75rem', opacity: 0.8 }}>UID Associato</p>
+                <p style={{ margin: 0, fontFamily: 'monospace', fontWeight: '700', fontSize: '1.05rem', color: uidModificato ? '#fde047' : 'white' }}>
+                  {nuovoUid || utenteSelezionato.id}
+                </p>
+              </div>
             </div>
           </div>
 
           {/* Form di Modifica */}
           <form onSubmit={salvaModifiche} style={{ background: '#f9fafb', padding: '25px', borderRadius: '16px', border: '1px solid #e5e7eb' }}>
             <h3 style={{ margin: '0 0 20px 0', color: '#1f2937', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <CheckCircle size={20} color="#4f46e5" /> Dati Anagrafici
+              <CheckCircle size={20} color="#4f46e5" /> Dati Anagrafici & Supporto NFC
             </h3>
 
             <div style={{ marginBottom: '20px' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.9rem', color: '#6b7280', marginBottom: '8px' }}>
-                <Hash size={16} /> Seriale Fisico (UID) - <span style={{ fontSize: '0.8rem', color: '#ef4444' }}>Non modificabile</span>
+              <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.9rem', color: '#6b7280', marginBottom: '8px' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Hash size={16} /> Seriale Fisico (UID) {uidModificato && <span style={{ color: '#059669', fontWeight: '700' }}>— NUOVA CHIAVETTA RILEVATA!</span>}
+                </span>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  {ultimoUidLettore && ultimoUidLettore !== nuovoUid && (
+                    <button 
+                      type="button" 
+                      onClick={() => impostaNuovaChiavetta(ultimoUidLettore)}
+                      style={{ background: '#e0e7ff', color: '#4f46e5', border: 'none', padding: '4px 10px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                    >
+                      <RefreshCw size={12} /> Usa UID letto ({ultimoUidLettore})
+                    </button>
+                  )}
+                  {uidModificato && (
+                    <button 
+                      type="button" 
+                      onClick={() => impostaNuovaChiavetta(utenteSelezionato.id)}
+                      style={{ background: '#fee2e2', color: '#dc2626', border: 'none', padding: '4px 10px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer' }}
+                    >
+                      Ripristina UID originale
+                    </button>
+                  )}
+                </div>
               </label>
-              <input type="text" disabled value={utenteSelezionato.id} style={{ width: '100%', boxSizing: 'border-box', background: '#e5e7eb', color: '#6b7280', fontFamily: 'monospace', padding: '10px 14px', border: '1px solid #d1d5db', borderRadius: '8px' }} />
+              <input 
+                type="text" 
+                value={nuovoUid} 
+                onChange={(e) => impostaNuovaChiavetta(e.target.value)}
+                style={{ 
+                  width: '100%', boxSizing: 'border-box', 
+                  background: uidModificato ? '#ecfdf5' : 'white', 
+                  color: '#1f2937', fontFamily: 'monospace', fontWeight: '700',
+                  padding: '10px 14px', border: `2px solid ${avvisoUid ? '#ef4444' : uidModificato ? '#059669' : '#d1d5db'}`, 
+                  borderRadius: '8px' 
+                }} 
+              />
+              {avvisoUid ? (
+                <small style={{ color: '#dc2626', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: '600' }}>
+                  <AlertTriangle size={14} /> {avvisoUid}
+                </small>
+              ) : (
+                <small style={{ color: '#6b7280', marginTop: '5px', display: 'block' }}>
+                  Per sostituire una chiavetta smarrita, poggia semplicemente la nuova chiavetta sul lettore NFC: il credito verrà trasferito automaticamente.
+                </small>
+              )}
             </div>
             
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '25px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '20px', marginBottom: '25px' }}>
               <div>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.9rem', color: '#6b7280', marginBottom: '8px' }}>
                   <User size={16} /> Nome e Cognome
@@ -228,8 +437,17 @@ export default function ModificaUtente() {
               </div>
             </div>
 
-            <button type="submit" className="btn-primary" disabled={loading} style={{ width: '100%', padding: '15px', fontSize: '1.1rem', justifyContent: 'center', backgroundColor: '#4f46e5' }}>
-              {loading ? 'Salvataggio in corso...' : 'Salva Modifiche'}
+            <button 
+              type="submit" 
+              className="btn-primary" 
+              disabled={loading || !!avvisoUid} 
+              style={{ 
+                width: '100%', padding: '15px', fontSize: '1.1rem', justifyContent: 'center', 
+                backgroundColor: avvisoUid ? '#9ca3af' : uidModificato ? '#059669' : '#4f46e5',
+                cursor: avvisoUid ? 'not-allowed' : 'pointer'
+              }}
+            >
+              {loading ? 'Salvataggio in corso...' : uidModificato ? `Trasferisci Profilo e Credito su Nuovo UID (${nuovoUid})` : 'Salva Modifiche'}
             </button>
           </form>
 
